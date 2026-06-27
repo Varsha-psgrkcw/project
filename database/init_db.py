@@ -29,7 +29,11 @@ else:
     DB_PATH = os.path.join(os.path.dirname(__file__), "neataura.db")
     # SQLite locally — replace SERIAL with INTEGER for compatibility
     sql_lite = sql.replace("SERIAL PRIMARY KEY", "INTEGER PRIMARY KEY AUTOINCREMENT")
-    sql_lite = sql_lite.replace("ON CONFLICT DO NOTHING", "OR IGNORE")
+    sql_lite = sql_lite.replace("ON CONFLICT DO NOTHING", "")
+    # Fix INSERT statements to use INSERT OR IGNORE
+    sql_lite = sql_lite.replace("INSERT INTO services", "INSERT OR IGNORE INTO services")
+    sql_lite = sql_lite.replace("INSERT INTO workers", "INSERT OR IGNORE INTO workers")
+    sql_lite = sql_lite.replace("INSERT INTO worker_services", "INSERT OR IGNORE INTO worker_services")
     conn = sqlite3.connect(DB_PATH)
     conn.executescript(sql_lite)
     conn.commit()
