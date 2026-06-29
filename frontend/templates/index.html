@@ -863,145 +863,59 @@ function validateConfirm(){
   if(p!==c){msg.className='validation-msg error';msg.textContent='Passwords do not match';}
   else if(c){msg.className='validation-msg success';msg.textContent='✓ Passwords match';}
 }
-// ─── API CLIENT (inlined from api.js) ────────────────────────────────────────
-var BASE = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-  ? "http://localhost:5000/api"
-  : "/api";
-function getToken(){ return localStorage.getItem("na_token"); }
-function setToken(t){ localStorage.setItem("na_token", t); }
-function clearToken(){ localStorage.removeItem("na_token"); localStorage.removeItem("na_user"); localStorage.removeItem("na_user_email"); }
-function authHeaders(){ return {"Content-Type":"application/json","Authorization":"Bearer "+getToken()}; }
+var API_BASE = '';  // empty = same server as the page
 
-function apiPost(path, body, auth){
-  return fetch(BASE+path,{
-    method:"POST",
-    headers: auth ? authHeaders() : {"Content-Type":"application/json"},
-    body: JSON.stringify(body)
-  }).then(function(r){return r.json();});
-}
-function apiGet(path, params){
-  params = params||{};
-  var qs = Object.keys(params).filter(function(k){return params[k]!=null;}).map(function(k){return encodeURIComponent(k)+"="+encodeURIComponent(params[k]);}).join("&");
-  return fetch(BASE+path+(qs?"?"+qs:""),{headers:authHeaders()}).then(function(r){return r.json();});
-}
-function apiPut(path, body){
-  return fetch(BASE+path,{method:"PUT",headers:authHeaders(),body:JSON.stringify(body||{})}).then(function(r){return r.json();});
-}
-
-function register(username, email, password){ return apiPost("/register",{username:username,email:email,password:password}); }
-function login(email, password){
-  return apiPost("/login",{email:email,password:password}).then(function(data){
-    if(data.token){
-      setToken(data.token);
-      localStorage.setItem("na_user", data.username);
-      localStorage.setItem("na_user_email", email);
-    }
-    return data;
-  });
-}
-function logout(){ clearToken(); showPage("page-login"); }
-function fetchServices(){ return apiGet("/services"); }
-function fetchWorkers(serviceId, city){ return apiGet("/workers",{service_id:serviceId,city:city}); }
-function createBooking(payload){ return apiPost("/bookings",payload,true); }
-function fetchBookings(){ return apiGet("/bookings"); }
-function cancelBooking(id){ return apiPut("/bookings/"+id+"/cancel"); }
-function fetchProfile(){ return apiGet("/profile"); }
-function updateProfile(data){ return apiPut("/profile",data); }
-// ─────────────────────────────────────────────────────────────────────────────
+function getToken()  { return localStorage.getItem('na_token'); }
+function setToken(t) { localStorage.setItem('na_token', t); }
+function authHeaders(){ return {'Content-Type':'application/json','Authorization':'Bearer '+getToken()}; }
 
 function doRegister(){
-  var u  = (document.getElementById('reg-username')||{}).value||'';
-  var em = (document.getElementById('reg-email')||{}).value||'';
-  var pw = (document.getElementById('reg-password')||{}).value||'';
-  var cf = (document.getElementById('reg-confirm')||{}).value||'';
-  if(!u||!em||!pw){showToast('Please fill all fields','');return;}
-  if(pw.length<8){showToast('Password must be at least 8 characters','');return;}
-  if(pw!==cf){showToast('Passwords do not match','');return;}
-
-  function registerSuccess(){
-    currentUser = u;
-    document.getElementById('welcome-name').textContent = currentUser;
-    // Save locally so login works without backend too
-    try{
-      var accounts = JSON.parse(localStorage.getItem('na_accounts')||'{}');
-      accounts[em.toLowerCase()] = {username:u, password:pw};
-      localStorage.setItem('na_accounts', JSON.stringify(accounts));
-      localStorage.setItem('na_user_email', em);
-      var raw=localStorage.getItem(PROFILE_KEY);
-      var existing=raw?JSON.parse(raw):{};
-      existing.email = em;
-      existing.name  = existing.name || u;
-      localStorage.setItem(PROFILE_KEY, JSON.stringify(existing));
-    }catch(e){}
-    showPage('page-welcome');
-    showToast('Account created!','success');
-  }
-
-  // Try backend, fall back to local-only
-  register(u, em, pw).then(function(data){
-    if(data && (data.message || data.token)){ registerSuccess(); }
-    else if(data && data.error){ showToast('❌ '+data.error,''); }
-    else { registerSuccess(); }
-  }).catch(function(){ registerSuccess(); }); // offline — still works locally
+  var u=document.getElementById('reg-username').value.trim();
+  var e=document.getElementById('reg-email').value.trim();
+  var p=document.getElementById('reg-password').value;
+  var c=document.getElementById('reg-confirm').value;
+  if(!u||!e||!p){showToast('Please fill all fields','');return;}
+  if(p!==c){showToast('Passwords do not match','');return;}
+  if(p.length<8){showToast('Password must be at least 8 characters','');return;}
+  fetch(API_BASE+'/api/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,email:e,password:p})})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.error){showToast(d.error,'');return;}
+      // auto login after register
+      fetch(API_BASE+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,password:p})})
+        .then(function(r){return r.json();})
+        .then(function(ld){
+          if(ld.token){
+            setToken(ld.token);
+            localStorage.setItem('na_user', ld.username||u);
+            localStorage.setItem('na_email', e);
+          }
+          currentUser = ld.username||u;
+          document.getElementById('welcome-name').textContent=currentUser;
+          showPage('page-welcome');
+          showToast('Account created! Welcome '+currentUser+'!','success');
+        });
+    })
+    .catch(function(){showToast('Cannot connect to server. Try again.','');});
 }
+
 function doLogin(){
-  var email=document.getElementById('login-email')?document.getElementById('login-email').value.trim():'';
-  var pw=document.getElementById('login-password')?document.getElementById('login-password').value:'';
-  if(!email||!pw){showToast('Please enter email and password','');return;}
-
-  function loginSuccess(username, emailAddr){
-    currentUser = username || emailAddr.split('@')[0] || 'User';
-    document.getElementById('welcome-name').textContent = currentUser;
-    // Store email in local profile
-    try{
-      var raw=localStorage.getItem(PROFILE_KEY);
-      var existing=raw?JSON.parse(raw):{};
-      existing.email = emailAddr;
-      existing.name  = existing.name || currentUser;
-      localStorage.setItem(PROFILE_KEY, JSON.stringify(existing));
-      localStorage.setItem('na_user_email', emailAddr);
-    }catch(e){}
-    showPage('page-welcome');
-    showToast('Welcome back, '+currentUser+'!','success');
-  }
-
-  // ── Try backend first, fall back to localStorage account ──
-  login(email, pw).then(function(data){
-    if(data && data.token){
-      // ✅ Backend login succeeded
-      loginSuccess(data.username, email);
-      // Also sync profile from server in background
-      fetchProfile().then(function(prof){
-        if(prof && prof.email){
-          try{
-            var raw=localStorage.getItem(PROFILE_KEY);
-            var existing=raw?JSON.parse(raw):{};
-            existing.email=prof.email;
-            if(prof.city)  existing.city  = existing.city  || prof.city;
-            if(prof.phone) existing.phone = existing.phone || prof.phone;
-            localStorage.setItem(PROFILE_KEY, JSON.stringify(existing));
-          }catch(e){}
-        }
-      }).catch(function(){});
-    } else {
-      // Backend returned an error — try localStorage fallback
-      localLogin(email, pw, loginSuccess);
-    }
-  }).catch(function(){
-    // Network error (no backend) — use localStorage accounts
-    localLogin(email, pw, loginSuccess);
-  });
-}
-
-function localLogin(email, pw, onSuccess){
-  // Check accounts stored by doRegister in localStorage
-  try{
-    var accounts = JSON.parse(localStorage.getItem('na_accounts')||'{}');
-    var acc = accounts[email.toLowerCase()];
-    if(!acc){ showToast('❌ No account found for this email',''); return; }
-    if(acc.password !== pw){ showToast('❌ Incorrect password',''); return; }
-    onSuccess(acc.username, email);
-  }catch(e){ showToast('❌ Login error. Please try again.',''); }
+  var e=document.getElementById('login-email').value.trim();
+  var p=document.getElementById('login-password').value;
+  if(!e||!p){showToast('Please enter email and password','');return;}
+  fetch(API_BASE+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:e,password:p})})
+    .then(function(r){return r.json();})
+    .then(function(d){
+      if(d.error){showToast(d.error,'');return;}
+      setToken(d.token);
+      localStorage.setItem('na_user', d.username||'User');
+      localStorage.setItem('na_email', e);
+      currentUser = d.username||'User';
+      document.getElementById('welcome-name').textContent=currentUser;
+      showPage('page-welcome');
+      showToast('Welcome back, '+currentUser+'!','success');
+    })
+    .catch(function(){showToast('Cannot connect to server. Try again.','');});
 }
 
 function renderHomeCategories(){
@@ -1231,7 +1145,6 @@ function finalizeBooking(){
     return;
   }
   var bookingNum=Math.floor(10000+Math.random()*90000);
-  var bookingId='NA-'+bookingNum;
   var t=computeBookingTotals();
   var bookingDate=document.getElementById('b-date').value||new Date().toISOString().split('T')[0];
   var bookingTime=document.getElementById('b-time').value||'09:00';
@@ -1247,59 +1160,33 @@ function finalizeBooking(){
     +'<div class="cd-row"><span class="cd-label">Date</span><span class="cd-val">'+bookingDate+'</span></div>'
     +'<div class="cd-row"><span class="cd-label">Time</span><span class="cd-val">'+bookingTime+'</span></div>'
     +'<div class="cd-row"><span class="cd-label">Duration</span><span class="cd-val">'+t.w+' worker(s) × '+t.d+' day(s) × '+t.h+' hrs/day</span></div>'
-    +'<div class="cd-row"><span class="cd-label">Distance</span><span class="cd-val">'+t.distanceKm+' km</span></div>'
     +'<div class="cd-row"><span class="cd-label">Travel Charge</span><span class="cd-val">₹'+t.travelFee+'</span></div>'
     +'<div class="cd-row"><span class="cd-label">Payment Method</span><span class="cd-val">'+selectedPayment+'</span></div>'
     +'<div class="cd-row"><span class="cd-label">Total Paid</span><span class="cd-val" style="color:var(--primary);font-size:1rem;">₹'+t.grandTotal.toLocaleString('en-IN')+'</span></div>';
-
-  // ── SAVE BOOKING TO BACKEND — only happens now, after payment is confirmed ──
-  var newBooking = {
-    id: bookingId,
-    service: selectedService || 'Home Cleaning',
-    worker: workerName,
-    city: t.city,
-    date: bookingDate,
-    time: bookingTime,
-    workers: t.w,
-    days: t.d,
-    hours: t.h,
-    genderPref: selectedGender || 'Any',
-    distanceKm: t.distanceKm,
-    travelFee: t.travelFee,
-    paymentMethod: selectedPayment,
-    amount: '₹' + t.grandTotal.toLocaleString('en-IN'),
-    totalNum: t.grandTotal,
-    status: 'Active',
-    bookedAt: new Date().toISOString()
-  };
-  addBooking(newBooking);
-  // ── Send SMS notification to admin ──────────────────────────────────────
-  var prof=loadProfile();
-  var token=localStorage.getItem('na_token');
-  if(token){
-    fetch(BASE+'/api/notify/booking'),{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
-      body:JSON.stringify({
-        bookingId:    bookingId,
-        service:      selectedService||'Home Cleaning',
-        worker:       workerName,
-        customerName: prof.name||currentUser,
-        customerPhone:prof.phone||'—',
-        city:         t.city,
-        date:         bookingDate,
-        time:         bookingTime,
-        paymentMethod:selectedPayment,
-        amount:       '₹'+t.grandTotal.toLocaleString('en-IN')
-      })
-    }).catch(function(){});
-  }
-  // ────────────────────────────────────────────────────────────────────────
 
   document.getElementById('confirm-pending-section').classList.add('hidden');
   document.getElementById('confirm-success-section').classList.remove('hidden');
   showToast('✅ Payment confirmed — booking placed!','success');
   spawnConfetti();
+
+  // ── Send email notification to owner via backend ──────────────
+  fetch(API_BASE+'/api/notify/booking',{
+    method:'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      booking_id: 'NA-'+bookingNum,
+      service:    selectedService||'Home Cleaning',
+      worker:     workerName,
+      city:       t.city,
+      date:       bookingDate,
+      time:       bookingTime,
+      num_workers:t.w,
+      num_days:   t.d,
+      payment:    selectedPayment,
+      total:      t.grandTotal.toLocaleString('en-IN')
+    })
+  });
+  // ──────────────────────────────────────────────────────────────
 }
 function spawnConfetti(){
   var colors=['#6C3CE1','#F59E0B','#10B981','#EF4444','#3B82F6','#EC4899'];
@@ -1349,27 +1236,21 @@ function closeSOS(){document.getElementById('sosModal').classList.add('hidden');
 function sendSOS(reason){
   closeSOS();
   showToast('🆘 SOS Alert sent! Support team will call you within 2 min. Reason: '+reason,'');
-  // ── Send SOS SMS to admin ─────────────────────────────────────────────
-  var prof=loadProfile();
-  var token=localStorage.getItem('na_token');
-  var activeBooking=bookingHistory.find(function(b){return b.status==='Active';});
-  if(token){
-    fetch(BASE+'/api/notify/sos',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},
-      body:JSON.stringify({
-        customerName:  prof.name||currentUser,
-        customerPhone: prof.phone||'—',
-        address:       (prof.address?prof.address+', ':'')+prof.city+(prof.pincode?' - '+prof.pincode:''),
-        bookingId:     activeBooking?activeBooking.id:'—',
-        reason:        reason
-      })
-    }).catch(function(){});
-  }
-  // ─────────────────────────────────────────────────────────────────────
   setTimeout(function(){
     showToast('📞 NeatAura Support is calling you now...','success');
   },3000);
+  // ── Send email alert to owner via backend ──────────────────────
+  var prof=loadProfile();
+  fetch(API_BASE+'/api/notify/sos',{
+    method:'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      reason:     reason,
+      booking_id: document.getElementById('track-id')?document.getElementById('track-id').textContent:'—',
+      address:    (prof.address||'—')+', '+(prof.city||'—')
+    })
+  });
+  // ──────────────────────────────────────────────────────────────
 }
 function callWorker(){
   var name=selectedWorker?selectedWorker.name:'your worker';
@@ -1471,14 +1352,14 @@ function loadProfile(){
     var saved = raw ? JSON.parse(raw) : {};
     return {
       name:    saved.name    || currentUser || 'User',
-      email:   saved.email   || localStorage.getItem('na_user_email') || '—',
+      email:   saved.email   || 'demo@neataura.com',
       phone:   saved.phone   || '',
       address: saved.address || '',
       city:    saved.city    || '',
       pincode: saved.pincode || ''
     };
   } catch(e) {
-    return {name:currentUser,email:'—',phone:'',address:'',city:'',pincode:''};
+    return {name:currentUser,email:'demo@neataura.com',phone:'',address:'',city:'',pincode:''};
   }
 }
 function saveDetailsAndContinue(){
@@ -1497,7 +1378,7 @@ function saveDetailsAndContinue(){
   if(!/^[\d\s\+\-]{10,15}$/.test(phone)){errEl.style.display='block';errEl.textContent='⚠️ Enter a valid phone number (10-15 digits).';return;}
   errEl.style.display='none';
   var existing={};try{var r=localStorage.getItem(PROFILE_KEY);if(r)existing=JSON.parse(r);}catch(e){}
-  var updated={name:name,email:existing.email||'demo@neataura.com',phone:phone,address:address,city:city,pincode:pincode};
+  var updated={name:name,email:existing.email||localStorage.getItem('na_email')||'',phone:phone,address:address,city:city,pincode:pincode};
   try{localStorage.setItem(PROFILE_KEY,JSON.stringify(updated));}catch(e){}
   currentUser=name;
   if(city) selectCity(city);
