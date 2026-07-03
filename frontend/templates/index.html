@@ -298,8 +298,9 @@ tr:hover td{background:#F9F8FF;}
     <div style="text-align:center;margin-bottom:1.5rem;"><div class="logo" style="font-size:2rem;">Neat<span>Aura</span></div></div>
     <h2>Welcome Back 👋</h2>
     <p class="sub">Sign in to continue booking services</p>
-    <div class="form-group"><label>Email Address</label><input type="email" id="login-email" value="demo@neataura.com"></div>
-    <div class="form-group"><label>Password</label><div class="pw-wrap"><input type="password" id="login-password" value="password123"><span class="pw-toggle" onclick="togglePw('login-password',this)">👁</span></div></div>
+    <div class="form-group"><label>Email Address</label><input type="email" id="login-email" placeholder="you@example.com"></div>
+    <div class="form-group"><label>Password</label><div class="pw-wrap"><input type="password" id="login-password" placeholder="Enter your password"><span class="pw-toggle" onclick="togglePw('login-password',this)">👁</span></div></div>
+    <div id="login-err" style="display:none;color:var(--danger);font-size:.83rem;margin-bottom:1rem;background:#FEF2F2;padding:.6rem 1rem;border-radius:8px;border-left:3px solid var(--danger);"></div>
     <div style="text-align:right;margin-bottom:1rem;"><a style="font-size:.83rem;color:var(--primary);cursor:pointer;">Forgot password?</a></div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;" onclick="doLogin()">Sign In →</button>
     <div class="auth-switch">New here? <a onclick="showPage('page-register')">Create an account</a></div>
@@ -863,24 +864,42 @@ function validateConfirm(){
   if(p!==c){msg.className='validation-msg error';msg.textContent='Passwords do not match';}
   else if(c){msg.className='validation-msg success';msg.textContent='✓ Passwords match';}
 }
-// ─── API CONFIG ──────────────────────────────────────────────
+// ═══════════════════════════════════════════════
+// BACKEND API CONFIG
+// ═══════════════════════════════════════════════
 var API_BASE = 'https://neataura-bls9.onrender.com';
 function getToken(){ return localStorage.getItem('na_token'); }
 function setToken(t){ localStorage.setItem('na_token', t); }
 function authHeaders(){ return {'Content-Type':'application/json','Authorization':'Bearer '+getToken()}; }
 
-// ─── FIX 1: Clear register form every time page opens ────────
+// ═══════════════════════════════════════════════
+// FIX 1 & 3: Clear forms on open + skip details if already filled
+// ═══════════════════════════════════════════════
 var _origShowPage = showPage;
 showPage = function(id){
   _origShowPage(id);
-  // Clear register fields so old values don't show
+
+  // Clear register fields every time
   if(id==='page-register'){
-    var fields=['reg-username','reg-email','reg-password','reg-confirm'];
-    fields.forEach(function(f){ var el=document.getElementById(f); if(el) el.value=''; });
-    var msgs=['username-msg','email-msg','password-msg','confirm-msg'];
-    msgs.forEach(function(m){ var el=document.getElementById(m); if(el) el.textContent=''; });
+    ['reg-username','reg-email','reg-password','reg-confirm'].forEach(function(f){
+      var el=document.getElementById(f); if(el) el.value='';
+    });
+    ['username-msg','email-msg','password-msg','confirm-msg'].forEach(function(m){
+      var el=document.getElementById(m); if(el) el.textContent='';
+    });
   }
-  // FIX 3: Skip details page if already saved
+
+  // Clear login fields every time
+  if(id==='page-login'){
+    var le=document.getElementById('login-email');
+    var lp=document.getElementById('login-password');
+    var lerr=document.getElementById('login-err');
+    if(le) le.value='';
+    if(lp) lp.value='';
+    if(lerr){ lerr.style.display='none'; lerr.textContent=''; }
+  }
+
+  // Skip details page if profile already complete
   if(id==='page-details'){
     var prof=loadProfile();
     if(prof.phone && prof.address && prof.city && prof.pincode){
@@ -890,64 +909,78 @@ showPage = function(id){
   }
 };
 
-// ─── FIX 2: Real login with backend API ──────────────────────
+// ═══════════════════════════════════════════════
+// FIX 2: Real register with backend
+// ═══════════════════════════════════════════════
 function doRegister(){
   var u=document.getElementById('reg-username').value.trim();
   var e=document.getElementById('reg-email').value.trim();
   var p=document.getElementById('reg-password').value;
   var c=document.getElementById('reg-confirm').value;
-  if(!u||!e||!p){showToast('Please fill all fields','');return;}
-  if(p!==c){showToast('Passwords do not match','');return;}
-  if(p.length<8){showToast('Password must be at least 8 characters','');return;}
+  if(!u||!e||!p||!c){ showToast('Please fill all fields',''); return; }
+  if(p!==c){ showToast('Passwords do not match',''); return; }
+  if(p.length<8){ showToast('Password must be at least 8 characters',''); return; }
+
   fetch(API_BASE+'/api/register',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({username:u,email:e,password:p})
-  }).then(function(r){return r.json();})
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username:u, email:e, password:p})
+  })
+  .then(function(r){ return r.json(); })
   .then(function(d){
-    if(d.error){showToast(d.error,'');return;}
-    // auto login after register
-    fetch(API_BASE+'/api/login',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({email:e,password:p})
-    }).then(function(r){return r.json();})
+    if(d.error){ showToast(d.error,''); return; }
+    // Auto login after register
+    return fetch(API_BASE+'/api/login',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email:e, password:p})
+    })
+    .then(function(r){ return r.json(); })
     .then(function(ld){
       if(ld.token){
         setToken(ld.token);
-        localStorage.setItem('na_user',ld.username||u);
-        localStorage.setItem('na_email',e);
+        localStorage.setItem('na_user', ld.username||u);
+        localStorage.setItem('na_email', e);
       }
-      currentUser=ld.username||u;
-      document.getElementById('welcome-name').textContent=currentUser;
-      showPage('page-welcome');
+      currentUser = ld.username||u;
+      document.getElementById('welcome-name').textContent = currentUser;
+      _origShowPage('page-welcome');
       showToast('Account created! Welcome '+currentUser+'!','success');
     });
-  }).catch(function(){showToast('Cannot connect to server. Try again.','');});
+  })
+  .catch(function(){ showToast('Cannot connect to server. Try again.',''); });
 }
 
+// ═══════════════════════════════════════════════
+// FIX 2: Real login with backend
+// ═══════════════════════════════════════════════
 function doLogin(){
   var e=document.getElementById('login-email').value.trim();
   var p=document.getElementById('login-password').value;
-  if(!e||!p){showToast('Please enter email and password','');return;}
+  var errEl=document.getElementById('login-err');
+  if(!e||!p){ showToast('Please enter email and password',''); return; }
+
   fetch(API_BASE+'/api/login',{
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({email:e,password:p})
-  }).then(function(r){return r.json();})
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email:e, password:p})
+  })
+  .then(function(r){ return r.json(); })
   .then(function(d){
-    if(d.error){showToast(d.error,'');return;}
+    if(d.error){
+      if(errEl){ errEl.style.display='block'; errEl.textContent='⚠️ '+d.error; }
+      showToast(d.error,'');
+      return;
+    }
     setToken(d.token);
-    localStorage.setItem('na_user',d.username||'User');
-    localStorage.setItem('na_email',e);
-    currentUser=d.username||'User';
-    // FIX 3: restore saved name from profile if exists
+    localStorage.setItem('na_user', d.username||'User');
+    localStorage.setItem('na_email', e);
+    currentUser = d.username||'User';
+    // Restore saved name from profile if exists
     var prof=loadProfile();
-    if(prof.name) currentUser=prof.name;
-    document.getElementById('welcome-name').textContent=currentUser;
-    showPage('page-welcome');
+    if(prof && prof.name) currentUser=prof.name;
+    document.getElementById('welcome-name').textContent = currentUser;
+    _origShowPage('page-welcome');
     showToast('Welcome back, '+currentUser+'!','success');
-  }).catch(function(){showToast('Cannot connect to server. Try again.','');});
+  })
+  .catch(function(){ showToast('Cannot connect to server. Try again.',''); });
 }
 
 function renderHomeCategories(){
