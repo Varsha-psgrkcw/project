@@ -36,7 +36,7 @@ def init_database():
     sql_path = os.path.join(os.path.dirname(__file__), "../database/schema.sql")
     if not os.path.exists(sql_path):
         return
-    with open(sql_path, "r") as f:
+    with open(sql_path, "r", encoding="utf-8") as f:
         sql = f.read()
     if DATABASE_URL:
         try:
